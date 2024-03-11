@@ -7,4 +7,4 @@ def return_test_message():
     return {'message': 'Developing...'}, 200
 
 if __name__ == '__main__':
-    app_msg.run(debug=False, port=5003)
+    app_msg.run(debug=False, port=5005)
