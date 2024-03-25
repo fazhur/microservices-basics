@@ -2,11 +2,11 @@ from flask import Flask, request
 import hazelcast
 import sys
 import subprocess
-import threading
 
 app = Flask(__name__)
 
-ip = '172.20.96.1'
+# ip = '172.20.96.1'
+ip = '192.168.1.13'
 
 @app.route('/api/v1.0/log', methods=['POST'])
 def receive_uuid_message():
