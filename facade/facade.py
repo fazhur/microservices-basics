@@ -7,8 +7,7 @@ import subprocess
 
 app = Flask(__name__)
 
-# ip = '192.168.1.13'
-ip = '172.20.96.1'
+ip = '192.168.1.13'
 
 messages_nodes = 2
 log_nodes = 3
@@ -17,17 +16,11 @@ def select_log_node():
     return f'http://localhost:600{random.randint(1,log_nodes)}/api/v1.0/log'
     # return f'http://localhost:6002/api/v1.0/log'
 
-def select_msg_node():
-    return f'http://localhost:610{random.randint(1,messages_nodes)}/api/v1.0/msg'
-    # return f'http://localhost:6101/api/v1.0/msg'
 
 def put_message(message):
     print("Trying to access queue")
-    client = hazelcast.HazelcastClient(
-        cluster_name="hazelcast-msg-cluster")
-    msg_queue = client.get_queue("msg").blocking()
-    print('Queue received')
-    msg_queue.put(message)
+    writer = random.choice(queue_writers)
+    writer.write(message)
     print("puted in queue")
     return 'Success', 200
 
@@ -37,9 +30,9 @@ def receive_message():
     client_request = request.get_json(force=True)
     message = client_request['message']
     print(f'Message: {message}')
-    # uuid = generate_uuid(message)
+    uuid = generate_uuid(message)
     result = put_message(message)
-    # response = requests.post(select_log_node(), json={'UUID': uuid, 'msg': message})
+    response = requests.post(select_log_node(), json={'UUID': uuid, 'msg': message})
     return result
 
 def generate_uuid(message):
@@ -47,32 +40,36 @@ def generate_uuid(message):
 
 @app.route('/api/v1.0/facade', methods=['GET'])
 def respond_message():
-    # log = send_to_log()['log']
-    log = 'test \n'
-    msg = send_to_msg()['message']
-    return log + msg, 200
+    print("received GET")
+    log = requests.get(select_log_node())
+    print(log)
+    log = log.json()['log']
+    msg = ''
+    for i in range(1, 3):
+        responce = requests.get(f'http://localhost:610{i}/api/v1.0/msg')
+        msg += responce.json()['message']
+    return {'result': log + '\n' + msg}, 200
 
 def send_to_log():
     response = requests.get(select_log_node())
     return response.json()
 
-def send_to_msg():
-    response = requests.get(select_msg_node())
-    return response.json()
 
-print('Facade running5')
+class QueueWriter:
+    def __init__(self, num):
+        print("Init started")
+        self.client = hazelcast.HazelcastClient(
+            cluster_name="hazelcast-cluster-log",
+            cluster_members=[f'{ip}:5701', f'{ip}:5702', f'{ip}:5703']
+        )
+        self.queue = self.client.get_queue(f"{num}-msg").blocking()
+        self.id = num
+
+    def write(self, message):
+        self.queue.put(message)
+
+
 if __name__ == '__main__':
     print('Facade running')
-    try:
-        node_name = f"hazelcast-msg-node-master"
-        command = [
-            "docker", "run", "-it", "--name", node_name, "--rm",
-            "-e", f"HZ_NETWORK_PUBLICADDRESS={ip}:5710",
-            "-e", "HZ_CLUSTERNAME=hazelcast-msg-cluster",
-            "-p", f"5710:5710",
-            "hazelcast/hazelcast:5.3.6"
-        ]
-        subprocess.Popen(command)
-        app.run(debug=False, port=5000)
-    finally:
-        subprocess.Popen(["docker", "stop", node_name])
+    queue_writers = [QueueWriter(i) for i in range(1, 3)]
+    app.run(debug=False, port=5000)
